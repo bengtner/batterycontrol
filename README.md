@@ -9,4 +9,4 @@ but if you know how to do it it is possible to run this on the same piece of har
 
 Home Assitant will do the actual control of charging and discharging of the battery. This script will use the Home Assistant REST inteface to instruct Home Assistant to
 charge or discharge the battery. This is done by means of an entity input_select.battery_mode, which can accept the following data: "Charge", "Discharge" or "Idle". 
-the automation to implement the battery control i HA is not covered in this repo (for the time beeing)
+The automation to implement the battery control i HA is not covered in this repo (for the time beeing)
