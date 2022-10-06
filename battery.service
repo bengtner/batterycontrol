@@ -1,0 +1,30 @@
+[Unit]
+Description=Battery charge control daemon
+#After=domoticz.service
+StartLimitInterval=400      # Must be > than StartLimitBurst*Restartsec
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart= /home/pi/batterycontrol/battery.py -l /home/pi/batterycontrol/battery.log  -v INFO
+
+#
+# 
+
+
+
+TimeoutStopSec=3
+#SyslogLevel=err
+#SyslogIdentifier=bbb
+
+WorkingDirectory=/home/pi/batterycontrol
+
+User=pi
+#Group=evok
+
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
+#Alias=evok.service
