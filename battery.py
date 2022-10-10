@@ -8,22 +8,10 @@
 # This scripts fetches daily electricity prices from Tibber and controls charching/discharging of a LUNA2000 battery through HomeAssistant. 
 # All commands vs. HomeAssistant is made over REST.
 # 
-#
-
-#
-# Home Assistans entities
-# =======================
-#
-# 
-# %valve    -   Controls water filling
-# %wateralarm - 	When this output is set high, water filling is blocked. When cleared (from Domoticz web interface) filling is enabled
-# %pump -       When true, pump is active
 # 
 ##############################################################################################################################################
 import time,datetime
 import argparse
-#import RPi.GPIO as GPIO
-#import haiolib
 from requests import post,get
 import json
 from scipy.signal import find_peaks
@@ -31,9 +19,12 @@ import math
 
 # Local data and secrets
 
-HA_URL = "http://xxx.xxx.zzz.yyy:8123"
-HA_TOKEN = "verylongstring......."
-TIBBER_TOKEN = "notsolongstring......"
+# Moved to import file guarded by .gitignore
+#
+#HA_URL = "http://xxx.xxx.zzz.yyy:8123"
+#HA_TOKEN = "verylongstring......."
+#TIBBER_TOKEN = "notsolongstring......"
+import privatetokens
 
 # Default values, can be changed by command line options
 
@@ -167,7 +158,7 @@ def logger(name,level):
 #
 
 def getPrices():
-    authorization = {"Authorization": "Bearer" + TIBBER_TOKEN , "Content-Type":"application/json"}
+    authorization = {"Authorization": "Bearer" + privatetokens.TIBBER_TOKEN , "Content-Type":"application/json"}
     gql = '{ "query": "{viewer {homes {currentSubscription {priceInfo {current {total energy tax startsAt} today {total energy tax startsAt} tomorrow { total energy tax startsAt }} }}}}"} '
     response = post("https://api.tibber.com/v1-beta/gql", data=gql, headers=authorization)
     return response
@@ -325,7 +316,7 @@ def main():
     options=get_cmd_line_parameters()           # get command line  
     bLogger=logger(LOGFILE, LOGLEVEL)
     
-    haSrv=homeAssistant(HA_URL,HA_TOKEN)
+    haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN)
    
     bLogger.info("*** Battery control system is starting up ***")
     bLogger.info("Logging - Log file: %s, Log level: %s", LOGFILE, LOGLEVEL)
