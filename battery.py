@@ -32,6 +32,7 @@ LOGFILE="./battery.log"
 WAIT = 10                   # seconds between loops
 LOGLEVEL='ERROR'
 TEST = False
+PRICECONTROL = False        # Will include setting of pricelevel in HA if set
 
 # Constants
 
@@ -114,12 +115,13 @@ class haEntity():
 ###########################################################################################################
 def get_cmd_line_parameters():
 
-    global  LOGFILE,WAIT,LOGLEVEL,TEST
+    global  LOGFILE,WAIT,LOGLEVEL,TEST,PRICECONTROL
 
     parser = argparse.ArgumentParser( description='Battery charging control daemon' )
     parser.add_argument("-v", "--loglevel", help="Log level. DEBUG, WARNING, INFO, ERROR or CRITICAL. Default ERROR.",default='ERROR')
     parser.add_argument("-l", "--logfile", help="Log file. Default " + LOGFILE, default=LOGFILE)
-    parser.add_argument("-t", "--test", help="Test mode. No interaction with HA and no loop. Logging set to INFO and name set to batterytest.log", action="store_true")
+    parser.add_argument("-t", "--test", help="Test mode. Will test HA and TIBBER interface. No loop and nothing set in HA. Logging set to INFO and name set to batterytest.log", action="store_true")
+    parser.add_argument("-p", "--pricecontrol", help="Price control. Will control setting of entity input_select.heating_level.", action="store_true")
 
                         
     args = parser.parse_args()
@@ -129,6 +131,8 @@ def get_cmd_line_parameters():
         LOGFILE = "batterytest.log"
         LOGLEVEL= "INFO"
         TEST = True
+    if args.pricecontrol :
+        PRICECONTROL = True
         
 ####################################################
 #
@@ -306,6 +310,11 @@ def buildChargeCntrlVector(data,logger):
 
     return vector
 
+def averagePrice(data) :
+    sum= 0
+    for x in data :
+        sum = sum + x['total']
+    return sum/24
 
 
 
@@ -314,6 +323,8 @@ def main():
     global  pLogger,NOCHARGEHOUR
     
     options=get_cmd_line_parameters()           # get command line  
+    print (LOGFILE)
+    print(LOGLEVEL)
     bLogger=logger(LOGFILE, LOGLEVEL)
     
     haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN)
@@ -337,6 +348,22 @@ def main():
     bLogger.info("Todays vector (at startup): " + str(vector) )
     bLogger.info("Next days vector (at startup): " + str(planned_vector) )
 
+    if PRICECONTROL:
+        haMaxPrice=haEntity(haSrv,'input_number.max_pris')
+        maxprice = haMaxPrice.getState()
+        haLevel=haEntity(haSrv,'input_number.niva')
+        level = haLevel.getState()
+        haHeatingLevel=haEntity(haSrv,'sensor.heating_level')
+        heatinglevel=haHeatingLevel.getState()
+        bLogger.info("Current Max Price: " + str(maxprice))
+        bLogger.info("Current Level: " + str(level))
+        bLogger.info("Current Heating Level: "+ heatinglevel)
+        todaysAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'])
+        bLogger.info("Todays average price: "+str(todaysAveragePrice))
+        if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
+            tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
+        else :
+            tomorrowsAveragePrice = 0
     hour = datetime.datetime.now().hour
 
     if TEST : return
@@ -353,6 +380,9 @@ def main():
             if hour == 0:
                 bLogger.info("Activate planned vector: "+str(planned_vector))
                 vector=planned_vector
+                if PRICECONTROL :
+                    todaysAveragePrice=tomorrowsAveragePrice
+                    bLogger.info("Todays average price is: "+str(todaysAveragePrice))
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'] = pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'] = []
             
@@ -362,7 +392,9 @@ def main():
                 planned_vector = buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
                 planned_vector[NOCHARGEHOUR] = '0'
                 bLogger.info("Next days vector: " + str(planned_vector) )
-           
+                if PRICECONTROL :
+                    tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
+                    bLogger.info("Tomorrows average price: "+str(todaysAveragePrice))
             if vector[hour] == '0' :
                 batteryChargeCntrl.setState('Idle')
                 bLogger.info("Battery mode set to Idle")
@@ -372,6 +404,17 @@ def main():
             else:
                 batteryChargeCntrl.setState('Discharge')
                 bLogger.info("Battery mode set to Discharge")
+            if PRICECONTROL :
+                currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
+                if currentprice > float(maxprice) :
+                    bLogger.info("Current price is: "+str(currentprice)+" Heating level set to: Off")
+                    haHeatingLevel.setState('Off')
+                elif currentprice > todaysAveragePrice *(1+float(level)) :
+                    bLogger.info("Current price is: "+str(currentprice)+" Heating level set to: Eco")
+                    haHeatingLevel.setState('Eco')
+                else :
+                    bLogger.info("Current price is: "+str(currentprice)+" Heating level set to: Normal")
+                    haHeatingLevel.setState('Normal')
         else :
             time.sleep(60)  
         

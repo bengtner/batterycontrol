@@ -2,6 +2,9 @@
 A python script to control charging/decharging of home battery based on electriciy price. The fundamental idea is to charge the battery from grid when electricity 
 price is low and discharge the battery to the grid when the price is high. The charging/discharging scheme is optimized to maximize revenue over a single day.
 
+The script also includes support to set the value of a sensor in HA to control the heating level. This sensor is set to "Off", "Normal" or "Eco"
+based on actual energy price compared to todays average price.
+
 This script will add functionality to a Home Assistant system running an Huawei Solar Integration (https://github.com/wlcrs/huawei_solar, thanks Thijs W.! ) to control
 Huawei Sun SOLAR inverter and battery.
 
