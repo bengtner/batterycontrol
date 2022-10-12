@@ -277,7 +277,7 @@ def buildChargeCntrlVector(data,logger):
                 vector[n] = '0'
             if i == len(peaksAndValleysSorted) - 2  :           # last segment pair
                 logger.info("Clear previous L segment(s)")
-                for n in range (peaksAndValleysSorted[i]['end'],0, -1):
+                for n in range (peaksAndValleysSorted[i]['end'],-1, -1):
                     if vector[n] == 'L':
                         vector[n] = '0' 
                     elif vector[n] == 'H' :
