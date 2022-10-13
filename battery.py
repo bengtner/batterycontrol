@@ -287,6 +287,8 @@ def buildChargeCntrlVector(data,logger):
                 for n in range(peaksAndValleysSorted[i]['start'],peaksAndValleysSorted[i]['end']) :
                     vector[n] = '0' 
     
+    if 'H' not in vector and 'L' not in vector :
+        vector = []                     # return empty list if no H or L segment
     logger.info("Cleaned up vector:")
     logger.info(vector)
 
@@ -323,8 +325,6 @@ def main():
     global  pLogger,NOCHARGEHOUR
     
     options=get_cmd_line_parameters()           # get command line  
-    print (LOGFILE)
-    print(LOGLEVEL)
     bLogger=logger(LOGFILE, LOGLEVEL)
     
     haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN)
@@ -378,8 +378,12 @@ def main():
             time.sleep(60)                      # Wait one minute to make sure we are well beyond hour boundery
 
             if hour == 0:
-                bLogger.info("Activate planned vector: "+str(planned_vector))
                 vector=planned_vector
+                if len(vector) == 0 :
+                    bLogger.info("Price curve flat. Activate maximize self-consumption mode ")
+                    batteryChargeCntrl.setState('Selfconsumption')
+                else :
+                    bLogger.info("Activate planned vector: "+str(planned_vector))
                 if PRICECONTROL :
                     todaysAveragePrice=tomorrowsAveragePrice
                     bLogger.info("Todays average price is: "+str(todaysAveragePrice))
@@ -390,20 +394,26 @@ def main():
                 pdata=json.loads(getPrices().text)             # get new prices
                 bLogger.info("Fetched next days prices, analyzing....")
                 planned_vector = buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
-                planned_vector[NOCHARGEHOUR] = '0'
-                bLogger.info("Next days vector: " + str(planned_vector) )
+                if len(planned_vector) != 0 : 
+                    planned_vector[NOCHARGEHOUR] = '0'
+                    bLogger.info("Next days vector: " + str(planned_vector) )
+                else :
+                    bLogger.info("Next day will apply maximize self-consumption")
                 if PRICECONTROL :
                     tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
                     bLogger.info("Tomorrows average price: "+str(todaysAveragePrice))
-            if vector[hour] == '0' :
-                batteryChargeCntrl.setState('Idle')
-                bLogger.info("Battery mode set to Idle")
-            elif vector[hour] == 'L':
-                batteryChargeCntrl.setState('Charge')
-                bLogger.info("Battery mode set to Charge")
-            else:
-                batteryChargeCntrl.setState('Discharge')
-                bLogger.info("Battery mode set to Discharge")
+            if len(vector) != 0:
+                if vector[hour] == '0' :
+                    batteryChargeCntrl.setState('Idle')
+                    bLogger.info("Battery mode set to Idle")
+                elif vector[hour] == 'L':
+                    batteryChargeCntrl.setState('Charge')
+                    bLogger.info("Battery mode set to Charge")
+                else:
+                    batteryChargeCntrl.setState('Discharge')
+                    bLogger.info("Battery mode set to Discharge")
+            else :
+                bLogger.info("No high price segments. Apply maximize self-consumptio")
             if PRICECONTROL :
                 currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
                 if currentprice > float(maxprice) :
