@@ -174,10 +174,15 @@ def buildChargeCntrlVector(data,logger):
     vector =[]
     for i in range(24) : vector.append('0')
 
+    testdata = [0.3055, 0.2994, 0.2921, 0.2902, 0.296, 0.3117, 0.382, 1.7493, 2.2345, 2.2333, 2.2337, 2.234, 1.9699, 1.75, 1.7498, 1.6685, 1.75, 2.1652, 2.7454, 2.51, 0.9099, 0.6484, 0.5767, 0.5056]
+
     prices = []
     for x in data :
         prices.append(x['total'])
-    
+
+    ##
+    #prices = testdata
+    ###
     logger.info(prices)
 
     peaksAndValleys = []
@@ -269,9 +274,11 @@ def buildChargeCntrlVector(data,logger):
     #
     
     for i in range(0,len(peaksAndValleysSorted),2):
+        chargesegmentlength = peaksAndValleysSorted[i]['end'] - peaksAndValleysSorted[i]['start']
         logger.info(peaksAndValleysSorted[i])
         logger.info(peaksAndValleysSorted[i+1])
-        if peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS) <= (peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*CYCLELENGTH)*(1+INVERTERLOSS) :
+        if peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS) <= (peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*CYCLELENGTH)*(1+INVERTERLOSS ) and chargesegmentlength > 1  \
+            or chargesegmentlength < 2 :
             logger.info("Clear high segment "+ str(peaksAndValleysSorted[i+1]['start'])+" to "+ str(peaksAndValleysSorted[i+1]['end']) )
             for n in range(peaksAndValleysSorted[i+1]['start'],peaksAndValleysSorted[i+1]['end']) :
                 vector[n] = '0'
