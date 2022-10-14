@@ -357,16 +357,16 @@ def main():
 
     if PRICECONTROL:
         haMaxPrice=haEntity(haSrv,'input_number.max_pris')
-        maxprice = haMaxPrice.getState()
         haLevel=haEntity(haSrv,'input_number.niva')
-        level = haLevel.getState()
         haHeatingLevel=haEntity(haSrv,'sensor.heating_level')
+        maxprice = haMaxPrice.getState()
+        level = haLevel.getState()
         heatinglevel=haHeatingLevel.getState()
-        bLogger.info("Current Max Price: " + str(maxprice))
-        bLogger.info("Current Level: " + str(level))
-        bLogger.info("Current Heating Level: "+ heatinglevel)
+        bLogger.info("Current Max Price (at startup): " + str(maxprice))
+        bLogger.info("Current Level (at startup): " + str(level))
+        bLogger.info("Current Heating Level (at startup): "+ heatinglevel)
         todaysAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'])
-        bLogger.info("Todays average price: "+str(todaysAveragePrice))
+        bLogger.info("Todays average price (at startup): "+str(todaysAveragePrice))
         if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
             tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
         else :
@@ -422,6 +422,9 @@ def main():
             else :
                 bLogger.info("No high price segments. Apply maximize self-consumptio")
             if PRICECONTROL :
+                maxprice = haMaxPrice.getState()
+                level = haLevel.getState()
+
                 currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
                 if currentprice > float(maxprice) :
                     bLogger.info("Current price is: "+str(currentprice)+" Heating level set to: Off")
