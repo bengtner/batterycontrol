@@ -277,7 +277,8 @@ def buildChargeCntrlVector(data,logger):
         chargesegmentlength = peaksAndValleysSorted[i]['end'] - peaksAndValleysSorted[i]['start']
         logger.info(peaksAndValleysSorted[i])
         logger.info(peaksAndValleysSorted[i+1])
-        if peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS) <= (peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*CYCLELENGTH)*(1+INVERTERLOSS ) and chargesegmentlength > 1  \
+        print ("Segment "+str(i) + " chg seg length " + str(chargesegmentlength)+" High segment value " + str(peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS)) + " Low segment value " + str((peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*chargesegmentlength)*(1+INVERTERLOSS )))
+        if (peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS) <= (peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*chargesegmentlength)*(1+INVERTERLOSS )) and chargesegmentlength > 1  \
             or chargesegmentlength < 2 :
             logger.info("Clear high segment "+ str(peaksAndValleysSorted[i+1]['start'])+" to "+ str(peaksAndValleysSorted[i+1]['end']) )
             for n in range(peaksAndValleysSorted[i+1]['start'],peaksAndValleysSorted[i+1]['end']) :
@@ -348,7 +349,7 @@ def main():
     vector[NOCHARGEHOUR] = '0'
     if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
         planned_vector =  buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
-        planned_vector[NOCHARGEHOUR] = '0'
+        if len(planned_vector) > 0 : planned_vector[NOCHARGEHOUR] = '0'
     else :
         planned_vector = []
 
@@ -366,7 +367,7 @@ def main():
         bLogger.info("Current Level (at startup): " + str(level))
         bLogger.info("Current Heating Level (at startup): "+ heatinglevel)
         todaysAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'])
-        bLogger.info("Todays average price (at startup): "+str(todaysAveragePrice))
+        bLogger.info("Todays average price (at startup): "+str(todagitysAveragePrice))
         if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
             tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
         else :
