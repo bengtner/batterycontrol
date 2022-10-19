@@ -346,7 +346,7 @@ def main():
 
     pdata=json.loads(getPrices().text)             # get prices
     vector = buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'],bLogger)
-    vector[NOCHARGEHOUR] = '0'
+    if len(vector) != 0 : vector[NOCHARGEHOUR] = '0'
     if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
         planned_vector =  buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
         if len(planned_vector) > 0 : planned_vector[NOCHARGEHOUR] = '0'
@@ -367,7 +367,7 @@ def main():
         bLogger.info("Current Level (at startup): " + str(level))
         bLogger.info("Current Heating Level (at startup): "+ heatinglevel)
         todaysAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'])
-        bLogger.info("Todays average price (at startup): "+str(todagitysAveragePrice))
+        bLogger.info("Todays average price (at startup): "+str(todaysAveragePrice))
         if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
             tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
         else :
