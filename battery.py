@@ -117,7 +117,7 @@ class haEntity():
 ###########################################################################################################
 def get_cmd_line_parameters():
 
-    GLOBAL LOGFILE
+    global LOGFILE,LOGLEVEL,TEST,PRICECONTROL
 
     parser = argparse.ArgumentParser( description='Battery charging control daemon' )
     parser.add_argument("-v", "--loglevel", help="Log level. DEBUG, WARNING, INFO, ERROR or CRITICAL. Default ERROR.",default='ERROR')
