@@ -10,6 +10,7 @@
 # 
 # 
 ##############################################################################################################################################
+from re import I, L
 from socket import TIPC_MEDIUM_IMPORTANCE
 import time,datetime
 import argparse
@@ -116,7 +117,6 @@ class haEntity():
 ###########################################################################################################
 def get_cmd_line_parameters():
 
-    global  LOGFILE,WAIT,LOGLEVEL,TEST,PRICECONTROL
 
     parser = argparse.ArgumentParser( description='Battery charging control daemon' )
     parser.add_argument("-v", "--loglevel", help="Log level. DEBUG, WARNING, INFO, ERROR or CRITICAL. Default ERROR.",default='ERROR')
@@ -169,45 +169,84 @@ def getPrices():
     return response
 #
 # 
+
+def buildChargeCntrlVector(data,logger):
+
+    #print(data)
+
+    vector = buildChargeCntrlVectorCamel(data,logger)
+    logger.info(f"Camel: {vector}")
+    if len(vector) != 0 : 
+        camelvalue = netValue(data,vector)
+    else : camelvalue = 0
+    logger.info(f"Net value camel: {camelvalue}")
+
+    vectorflat = buildChargeCntrlVectorFlat(data,logger)
+    logger.info (f"Flat: {vectorflat}")
+    if len(vectorflat)!=0 :
+        flatvalue = netValue(data,vectorflat)
+    else :
+        flatvalue = 0
+    logger.info(f"Net value flat: {flatvalue}")
+
+    if flatvalue > camelvalue :
+        logger.info(f"Flat vector selected.")
+        return vectorflat
+    else :
+        logger.info(f"Camel vector selected.")
+        return vector
+
+
 ##############################
 #
 # Following functions support creating a chargevector based on highest and lowest prices
 #
-
-
-def findSegment(vector):
-
-    i = 0
-    for x in vector:
-        if x != '0':
-            break
-        else:
-            i=i+1
-    length = len(vector)
-    for n in range(len(vector)-i):
-        if vector[i+n] not in ['0',vector[i]] :
-            length=n + i
-            break
-
-    return [vector[i],length]
-
-
-
 def buildChargeCntrlVectorFlat(data,logger):
 
     vector = buildVector(CYCLELENGTH,CYCLELENGTH,data)
-   # vector = ['-', '+', '+', '+', '-', '+', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '-', '-', '-', '-', '+']
-#    print(vector)
 
-    segments = []
-    i = 0
-    while i < len(vector) :
-        segment = findSegment(vector[i:])
-        segments.append(segment)
-        i = i + segment[1]
-#    print(segments)
-    return vector
+    hindex = findSegment('H',CYCLELENGTH,vector)    # Find the latest H segment with CYCLELENGTH no of H
+    #print("High index OK, starts at: "+ str(hindex))
+    if hindex < 0:
+        #print ("High segment not found with this algorithm. No vector returned")
+        return []
+    else : 
+        low_vector = buildVector(CYCLELENGTH,CYCLELENGTH,data[0:hindex]) # Make a new sort of earlier hours 
+        #print("Lower part")
+        #print(low_vector)
+        lindex = findSegment('L',CYCLELENGTH,low_vector)     
+        
+        if lindex < 0:
+            #print("Low segment not found with this algorithm. No vector returned")
+            return []
+        else :
+            #print (f"Low segment OK, starts at {lindex}")
+            for i in range(0,hindex) :
+                if low_vector[i] == 'L' : vector[i] = 'L'
+            for i in range(23,hindex,-1) :
+                if vector[i] == 'L' :
+                    vector[i] = '0'
+            return vector
 
+
+def findSegment(item,length,vector):
+
+    try:
+        pos=len(vector) - vector[::-1].index(item) -1
+    except ValueError as e:
+        pos = -1
+        return pos
+    nitem = 0
+    for i in range(pos,-1,-1) :
+        if vector[i] == item :
+            nitem = nitem +1
+            if nitem >= length :
+                return i
+    if vector[i] == item : 
+        pos = i
+    else : 
+        pos = -1
+    return pos
 
 
 def buildVector(nrlow,nrhigh,data):
@@ -220,69 +259,33 @@ def buildVector(nrlow,nrhigh,data):
         hour = int(sorted_data[x]['startsAt'][11:13])
         vector[hour]='L'
     for x in range(nrhigh):
-        hour = int(sorted_data[23-x]['startsAt'][11:13])
+        hour = int(sorted_data[len(data)-1-x]['startsAt'][11:13])
         vector[hour]='H'
 
     return vector
 #################################
 
+
+
 def netValue(data,vector) :
 
     tempvector=vector.copy()
-    if len(tempvector) != 0 : tempvector[NOCHARGEHOUR] = '0'
+    if len(tempvector) != 0 and tempvector[NOCHARGEHOUR] == 'L' : tempvector[NOCHARGEHOUR] = '0'
 
     value = 0
-    if len(vector) > 0 :
-        nocharge = countHours(vector,'L')
-        nodischarge = countHours(vector,'H')
-        if nocharge < nodischarge : nodischarge = nocharge
-        
-        for i in range(24):
-            if tempvector[i] == 'H': 
-                if nodischarge > 0:
-                    value = value + data[i]['total'] * (1-INVERTERLOSS)
-                    nodischarge = nodischarge - 1
-            if tempvector[i] == 'L': 
-                if nocharge > 0 :
-                    value = value - data[i]['total'] * (1+INVERTERLOSS)
-                    nocharge = nocharge - 1
+    nolow = 0
+    nohigh = 0
+    for i in range(24) :
+        if tempvector[i] == 'L' and nolow < CYCLELENGTH:
+            nolow = nolow + 1
+            value = value - data[i]['total'] * (1+INVERTERLOSS)
+            #print(f"Hour {i}, {tempvector[i]}, noLow {nolow}")
+        if tempvector[i] == 'H' and nolow > 0:
+            nolow = nolow - 1
+            value = value + data[i]['total'] * (1-INVERTERLOSS)
+            #print(f"Hour {i}, {tempvector[i]}, noLow {nolow}")
     
     return value*CHARGINGPOWER
-
-def countHours(vector,tag) :
-    n = 0
-    if len(vector) > 0 :
-        for i in range(24) :
-            if vector[i] == tag : n = n+1
-    
-    return n
-
-
-def buildChargeCntrlVector(data,logger):
-
-    print(data)
-
-    vector = buildChargeCntrlVectorCamel(data,logger)
-    print("Camel: "+ str(vector))
-    camelvalue = netValue(data,vector)
-    print("Net value: " + str(camelvalue))
-
-    vectorflat = buildChargeCntrlVectorFlat(data,logger)
-    print ("Flat: "+ str(vectorflat))
-    flatvalue = netValue(data,vectorflat)
-    print("Net value: " + str(flatvalue))
-
-    if flatvalue > camelvalue :
-        logger.info("Flat vector selected. Expected net value: "+ str(flatvalue))
-        logger.info("Discarded vector: ")
-        logger.info(vector)
-        return vectorflat
-    else :
-        logger.info("Camel vector selected. Expected net value: "+ str(camelvalue))
-        logger.info("Discarded vector: ")
-        logger.info(vectorflat)
-        return vector
-
 
 
 def buildChargeCntrlVectorCamel(data,logger):
@@ -328,7 +331,7 @@ def buildChargeCntrlVectorCamel(data,logger):
     #
     # Sort segments based on index for extreme value
     #
-    print("length peaksandvalleys " + str(len(peaksAndValleys)))
+   # print("length peaksandvalleys " + str(len(peaksAndValleys)))
 
     peaksAndValleysSorted=sorted(peaksAndValleys, key=lambda d: d['extreme']) 
 
@@ -372,19 +375,14 @@ def buildChargeCntrlVectorCamel(data,logger):
             sorted_segment = sorted(hourprice[segment['start']:segment['end']], key=lambda d: d['price'],reverse=True)
         else :
             sorted_segment = sorted(hourprice[segment['start']:segment['end']], key=lambda d: d['price'])
-    #    logger.info("*")
         segmentValue = 0
         for n,y in enumerate(sorted_segment) : 
-    #        logger.info(y)
             if n < CYCLELENGTH : 
                 segmentValue = segmentValue + y['price']
                 vector[y['hour']] = segment['type']
                 segment['hours'] = n + 1
         segment['value'] = segmentValue
-    #    logger.info(segment)
 
-    #logger.info("*")
-    #logger.info(vector)
 
     #
     # Analyze all load and discharge segments. Delete a charge segment unless it is profitable taking network transfer cost and inverter losses into account.
@@ -398,7 +396,7 @@ def buildChargeCntrlVectorCamel(data,logger):
 #        print ("Segment "+str(i) + " chg seg length " + str(chargesegmentlength)+" High segment value " + str(peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS)) + " Low segment value " + str((peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*chargesegmentlength)*(1+INVERTERLOSS )))
         if (peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS) <= (peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*chargesegmentlength)*(1+INVERTERLOSS )) and chargesegmentlength > 1  \
             or chargesegmentlength < 2 :
-            logger.info("Clear high segment "+ str(peaksAndValleysSorted[i+1]['start'])+" to "+ str(peaksAndValleysSorted[i+1]['end']) )
+            logger.info(f"Clear high segment {peaksAndValleysSorted[i+1]['start']} to {peaksAndValleysSorted[i+1]['end']}" )
             for n in range(peaksAndValleysSorted[i+1]['start'],peaksAndValleysSorted[i+1]['end']) :
                 vector[n] = '0'
             if i == len(peaksAndValleysSorted) - 2  :           # last segment pair
@@ -409,32 +407,12 @@ def buildChargeCntrlVectorCamel(data,logger):
                     elif vector[n] == 'H' :
                         break
             if i < len(peaksAndValleysSorted)/2  and (peaksAndValleysSorted[i+2]['value']/peaksAndValleysSorted[i+2]['hours'] < peaksAndValleysSorted[i]['value']/peaksAndValleysSorted[i]['hours']):
-                logger.info("Clear low segment "+ str(peaksAndValleysSorted[i]['start'])+" to "+ str(peaksAndValleysSorted[i]['end']) )
+                logger.info(f"Clear low segment {peaksAndValleysSorted[i]['start']} to {peaksAndValleysSorted[i]['end']}" )
                 for n in range(peaksAndValleysSorted[i]['start'],peaksAndValleysSorted[i]['end']) :
                     vector[n] = '0' 
     
     if 'H' not in vector and 'L' not in vector :
         vector = []                     # return empty list if no H or L segment
-    #logger.info("Cleaned up vector:")
-    #logger.info(vector)
-
-    #
-    # Estimate what revenue will be generated applying this vector for battery control
-    #
-    cost = 0
-    value = 0
-    nlow = 0
-    for i,x in enumerate(vector):
-        if x == 'L' :
-            if nlow < CYCLELENGTH :
-                cost = cost + (prices[i] + NETTRANSFERCOST)*(1+INVERTERLOSS)*2.5
-                nlow = nlow + 1
-        if x == 'H':
-            if nlow > 0 : 
-                nlow = nlow - 1
-                value = value + prices[i]*(1-INVERTERLOSS)*2.5
-    logger.info("Cost: " + str(cost))
-    logger.info("Sales: " + str(value))
 
     return vector
 
@@ -448,8 +426,6 @@ def averagePrice(data) :
 
 def main():
 
-    global  pLogger,NOCHARGEHOUR
-    
     options=get_cmd_line_parameters()           # get command line  
     bLogger=logger(LOGFILE, LOGLEVEL)
     
@@ -464,15 +440,16 @@ def main():
 
     pdata=json.loads(getPrices().text)             # get prices
     vector = buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'],bLogger)
-    if len(vector) != 0 : vector[NOCHARGEHOUR] = '0'
+    if len(vector) != 0 and vector[NOCHARGEHOUR] == 'L' : vector[NOCHARGEHOUR] = '0'
     if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
+        a=1
         planned_vector =  buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
-        if len(planned_vector) > 0 : planned_vector[NOCHARGEHOUR] = '0'
+        if len(planned_vector) > 0 and planned_vector[NOCHARGEHOUR] == 'L': planned_vector[NOCHARGEHOUR] = '0'
     else :
         planned_vector = []
 
-    bLogger.info("Todays vector (at startup): " + str(vector) )
-    bLogger.info("Next days vector (at startup): " + str(planned_vector) )
+    bLogger.info(f"Todays vector (at startup): {vector}" )
+    bLogger.info(f"Next days vector (at startup): {planned_vector}" )
 
     if PRICECONTROL:
         haMaxPrice=haEntity(haSrv,'input_number.max_pris')
@@ -481,11 +458,11 @@ def main():
         maxprice = haMaxPrice.getState()
         level = haLevel.getState()
         heatinglevel=haHeatingLevel.getState()
-        bLogger.info("Current Max Price (at startup): " + str(maxprice))
-        bLogger.info("Current Level (at startup): " + str(level))
-        bLogger.info("Current Heating Level (at startup): "+ heatinglevel)
+        bLogger.info(f"Current Max Price (at startup): {maxprice}")
+        bLogger.info(f"Current Level (at startup): {level}")
+        bLogger.info(f"Current Heating Level (at startup): {heatinglevel}")
         todaysAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'])
-        bLogger.info("Todays average price (at startup): "+str(todaysAveragePrice))
+        bLogger.info(f"Todays average price (at startup): {todaysAveragePrice}")
         if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
             tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
         else :
@@ -509,10 +486,10 @@ def main():
                     bLogger.info("Price curve flat. Activate maximize self-consumption mode ")
                     batteryChargeCntrl.setState('Selfconsumption')
                 else :
-                    bLogger.info("Activate planned vector: "+str(planned_vector))
+                    bLogger.info(f"Activate planned vector: {planned_vector}")
                 if PRICECONTROL :
                     todaysAveragePrice=tomorrowsAveragePrice
-                    bLogger.info("Todays average price is: "+str(todaysAveragePrice))
+                    bLogger.info(f"Todays average price is: {todaysAveragePrice}")
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'] = pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'] = []
             
@@ -521,13 +498,13 @@ def main():
                 bLogger.info("Fetched next days prices, analyzing....")
                 planned_vector = buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
                 if len(planned_vector) != 0 : 
-                    planned_vector[NOCHARGEHOUR] = '0'
-                    bLogger.info("Next days vector: " + str(planned_vector) )
+                    if planned_vector[NOCHARGEHOUR] == 'L' : planned_vector[NOCHARGEHOUR] = '0'
+                    bLogger.info(f"Next days vector: {planned_vector}" )
                 else :
                     bLogger.info("Next day will apply maximize self-consumption")
                 if PRICECONTROL :
                     tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
-                    bLogger.info("Tomorrows average price: "+str(todaysAveragePrice))
+                    bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
             if len(vector) != 0:
                 if vector[hour] == '0' :
                     batteryChargeCntrl.setState('Idle')
@@ -546,13 +523,13 @@ def main():
 
                 currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
                 if currentprice > float(maxprice) :
-                    bLogger.info("Current price is: "+str(currentprice)+" Heating level set to: Off")
+                    bLogger.info(f"Current price is: {currentprice} Heating level set to: Off")
                     haHeatingLevel.setState('Off')
                 elif currentprice > todaysAveragePrice *(1+float(level)) :
-                    bLogger.info("Current price is: "+str(currentprice)+" Heating level set to: Eco")
+                    bLogger.info(f"Current price is: {currentprice} Heating level set to: Eco")
                     haHeatingLevel.setState('Eco')
                 else :
-                    bLogger.info("Current price is: "+str(currentprice)+" Heating level set to: Normal")
+                    bLogger.info(f"Current price is: {currentprice} Heating level set to: Normal")
                     haHeatingLevel.setState('Normal')
         else :
             time.sleep(60)  
