@@ -10,6 +10,7 @@
 # 
 # 
 ##############################################################################################################################################
+from socket import TIPC_MEDIUM_IMPORTANCE
 import time,datetime
 import argparse
 from requests import post,get
@@ -40,7 +41,7 @@ NETTRANSFERCOST=0.70        # Cost for network transfer to be used to calculate 
 INVERTERLOSS=0.05
 CYCLELENGTH = 3             # no of hours for a complete charging/discharging hours
 NOCHARGEHOUR = 8            # TOU mode (used for charging) needs one discharge segment. This hour will be blocked for charging, i.e no 'L' setting this hour
-
+CHARGINGPOWER = 2.5         # Charging and discharging power (kW)
 
 #########################################################
 #
@@ -168,8 +169,124 @@ def getPrices():
     return response
 #
 # 
+##############################
 #
+# Following functions support creating a chargevector based on highest and lowest prices
+#
+
+
+def findSegment(vector):
+
+    i = 0
+    for x in vector:
+        if x != '0':
+            break
+        else:
+            i=i+1
+    length = len(vector)
+    for n in range(len(vector)-i):
+        if vector[i+n] not in ['0',vector[i]] :
+            length=n + i
+            break
+
+    return [vector[i],length]
+
+
+
+def buildChargeCntrlVectorFlat(data,logger):
+
+    vector = buildVector(CYCLELENGTH,CYCLELENGTH,data)
+   # vector = ['-', '+', '+', '+', '-', '+', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '-', '-', '-', '-', '+']
+#    print(vector)
+
+    segments = []
+    i = 0
+    while i < len(vector) :
+        segment = findSegment(vector[i:])
+        segments.append(segment)
+        i = i + segment[1]
+#    print(segments)
+    return vector
+
+
+
+def buildVector(nrlow,nrhigh,data):
+
+    vector = ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0']     
+
+    sorted_data = sorted(data, key=lambda d: d['total']) 
+
+    for x in range(nrlow):
+        hour = int(sorted_data[x]['startsAt'][11:13])
+        vector[hour]='L'
+    for x in range(nrhigh):
+        hour = int(sorted_data[23-x]['startsAt'][11:13])
+        vector[hour]='H'
+
+    return vector
+#################################
+
+def netValue(data,vector) :
+
+    tempvector=vector.copy()
+    if len(tempvector) != 0 : tempvector[NOCHARGEHOUR] = '0'
+
+    value = 0
+    if len(vector) > 0 :
+        nocharge = countHours(vector,'L')
+        nodischarge = countHours(vector,'H')
+        if nocharge < nodischarge : nodischarge = nocharge
+        
+        for i in range(24):
+            if tempvector[i] == 'H': 
+                if nodischarge > 0:
+                    value = value + data[i]['total'] * (1-INVERTERLOSS)
+                    nodischarge = nodischarge - 1
+            if tempvector[i] == 'L': 
+                if nocharge > 0 :
+                    value = value - data[i]['total'] * (1+INVERTERLOSS)
+                    nocharge = nocharge - 1
+    
+    return value*CHARGINGPOWER
+
+def countHours(vector,tag) :
+    n = 0
+    if len(vector) > 0 :
+        for i in range(24) :
+            if vector[i] == tag : n = n+1
+    
+    return n
+
+
 def buildChargeCntrlVector(data,logger):
+
+    print(data)
+
+    vector = buildChargeCntrlVectorCamel(data,logger)
+    print("Camel: "+ str(vector))
+    camelvalue = netValue(data,vector)
+    print("Net value: " + str(camelvalue))
+
+    vectorflat = buildChargeCntrlVectorFlat(data,logger)
+    print ("Flat: "+ str(vectorflat))
+    flatvalue = netValue(data,vectorflat)
+    print("Net value: " + str(flatvalue))
+
+    if flatvalue > camelvalue :
+        logger.info("Flat vector selected. Expected net value: "+ str(flatvalue))
+        logger.info("Discarded vector: ")
+        logger.info(vector)
+        return vectorflat
+    else :
+        logger.info("Camel vector selected. Expected net value: "+ str(camelvalue))
+        logger.info("Discarded vector: ")
+        logger.info(vectorflat)
+        return vector
+
+
+
+def buildChargeCntrlVectorCamel(data,logger):
+
 
     vector =[]
     for i in range(24) : vector.append('0')
@@ -211,6 +328,7 @@ def buildChargeCntrlVector(data,logger):
     #
     # Sort segments based on index for extreme value
     #
+    print("length peaksandvalleys " + str(len(peaksAndValleys)))
 
     peaksAndValleysSorted=sorted(peaksAndValleys, key=lambda d: d['extreme']) 
 
@@ -266,7 +384,7 @@ def buildChargeCntrlVector(data,logger):
     #    logger.info(segment)
 
     #logger.info("*")
-    logger.info(vector)
+    #logger.info(vector)
 
     #
     # Analyze all load and discharge segments. Delete a charge segment unless it is profitable taking network transfer cost and inverter losses into account.
@@ -277,7 +395,7 @@ def buildChargeCntrlVector(data,logger):
         chargesegmentlength = peaksAndValleysSorted[i]['end'] - peaksAndValleysSorted[i]['start']
         logger.info(peaksAndValleysSorted[i])
         logger.info(peaksAndValleysSorted[i+1])
-        print ("Segment "+str(i) + " chg seg length " + str(chargesegmentlength)+" High segment value " + str(peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS)) + " Low segment value " + str((peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*chargesegmentlength)*(1+INVERTERLOSS )))
+#        print ("Segment "+str(i) + " chg seg length " + str(chargesegmentlength)+" High segment value " + str(peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS)) + " Low segment value " + str((peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*chargesegmentlength)*(1+INVERTERLOSS )))
         if (peaksAndValleysSorted[i+1]['value']*(1-INVERTERLOSS) <= (peaksAndValleysSorted[i]['value']+NETTRANSFERCOST*chargesegmentlength)*(1+INVERTERLOSS )) and chargesegmentlength > 1  \
             or chargesegmentlength < 2 :
             logger.info("Clear high segment "+ str(peaksAndValleysSorted[i+1]['start'])+" to "+ str(peaksAndValleysSorted[i+1]['end']) )
@@ -297,8 +415,8 @@ def buildChargeCntrlVector(data,logger):
     
     if 'H' not in vector and 'L' not in vector :
         vector = []                     # return empty list if no H or L segment
-    logger.info("Cleaned up vector:")
-    logger.info(vector)
+    #logger.info("Cleaned up vector:")
+    #logger.info(vector)
 
     #
     # Estimate what revenue will be generated applying this vector for battery control
