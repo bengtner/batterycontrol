@@ -205,29 +205,42 @@ def buildChargeCntrlVector(data,logger):
 def buildChargeCntrlVectorFlat(data,logger):
 
     vector = buildVector(CYCLELENGTH,CYCLELENGTH,data)
-
+    print ("Flatvector first step:")
+    print(vector)
     hindex = findSegment('H',CYCLELENGTH,vector)    # Find the latest H segment with CYCLELENGTH no of H
-    #print("High index OK, starts at: "+ str(hindex))
+    print("High index OK, starts at: "+ str(hindex))
     if hindex < 0:
         #print ("High segment not found with this algorithm. No vector returned")
         return []
-    else : 
-        low_vector = buildVector(CYCLELENGTH,CYCLELENGTH,data[0:hindex]) # Make a new sort of earlier hours 
-        #print("Lower part")
-        #print(low_vector)
-        lindex = findSegment('L',CYCLELENGTH,low_vector)     
-        
-        if lindex < 0:
-            #print("Low segment not found with this algorithm. No vector returned")
-            return []
-        else :
-            #print (f"Low segment OK, starts at {lindex}")
-            for i in range(0,hindex) :
-                if low_vector[i] == 'L' : vector[i] = 'L'
-            for i in range(23,hindex,-1) :
-                if vector[i] == 'L' :
-                    vector[i] = '0'
-            return vector
+    # Check if we have low segment before high to be able to charge
+    lindex = findSegment('L',CYCLELENGTH,vector[0:hindex])
+    if lindex < 0:
+            print("Low segment not found before high. Shorten segment and repeat analysis")
+            # Check if we have low segment before high to be able to charge
+            low_vector = buildVector(CYCLELENGTH,0,data[0:hindex]) # Make a new sort of earlier hours 
+            print("Lower part")
+            print(low_vector)
+            lindex = findSegment('L',CYCLELENGTH,low_vector[0:hindex])
+            if lindex < 0:
+                print("Low segment not found before high. No vector returned")     
+                return []
+            else :
+                print ("Low segment found before high")
+                print (f"Low segment OK, starts at {lindex}")
+                for i in range(0,hindex) :
+                   if low_vector[i] == 'L' : vector[i] = 'L'
+                return vector
+
+
+    else :
+        print (f"Low segment OK, starts at {lindex}")
+    #    for i in range(0,hindex) :
+    #        if low_vector[i] == 'L' : vector[i] = 'L'
+    #    for i in range(len(data) - 1,hindex,-1) :
+    #        if vector[i] == 'L' :
+    #            vector[i] = '0'
+        return vector
+            
 
 
 def findSegment(item,length,vector):
@@ -252,16 +265,21 @@ def findSegment(item,length,vector):
 
 def buildVector(nrlow,nrhigh,data):
 
-    vector = ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','0']     
 
-    sorted_data = sorted(data, key=lambda d: d['total']) 
+    vector = ['0']*24
+    
 
-    for x in range(nrlow):
+    sorted_data = sorted(data, key=lambda d: d['total'])
+    print(f"Sorted data: {sorted_data}") 
+    print (f"nlow {nrlow} nhigh {nrhigh}")
+
+    for x in range(min(nrlow,len(data))):
+        print(f"L {int(sorted_data[x]['startsAt'][11:13])}")
         hour = int(sorted_data[x]['startsAt'][11:13])
         vector[hour]='L'
-    for x in range(nrhigh):
+    for x in range(min(nrhigh,len(data))):
         hour = int(sorted_data[len(data)-1-x]['startsAt'][11:13])
-        vector[hour]='H'
+        vector[hour]='H' ## 4 lång, kl 23 -> 3
 
     return vector
 #################################
@@ -292,8 +310,7 @@ def netValue(data,vector) :
 def buildChargeCntrlVectorCamel(data,logger):
 
 
-    vector =[]
-    for i in range(24) : vector.append('0')
+    vector = ['0']*24
 
     testdata = [0.3055, 0.2994, 0.2921, 0.2902, 0.296, 0.3117, 0.382, 1.7493, 2.2345, 2.2333, 2.2337, 2.234, 1.9699, 1.75, 1.7498, 1.6685, 1.75, 2.1652, 2.7454, 2.51, 0.9099, 0.6484, 0.5767, 0.5056]
 
@@ -330,9 +347,9 @@ def buildChargeCntrlVectorCamel(data,logger):
         peaksAndValleys.append(d)
 
     #
-    # Sort segments based on index for extreme value
+    # Sort segments based on index for extreme values
     #
-   # print("length peaksandvalleys " + str(len(peaksAndValleys)))
+    # print("length peaksandvalleys " + str(len(peaksAndValleys)))
 
     peaksAndValleysSorted=sorted(peaksAndValleys, key=lambda d: d['extreme']) 
 
@@ -343,8 +360,9 @@ def buildChargeCntrlVectorCamel(data,logger):
 
     if peaksAndValleysSorted[-1]['type'] == 'L':
         peaksAndValleysSorted = peaksAndValleysSorted + [{'extreme':len(prices)-1,'type':'H','start':0,'end':0,'value':0,'hours':0}]
-    #
-    # Calculate beginning and end of each segment
+    
+    # Remove this!!!!
+    # Calculate beginning and end of each segment 
     #
     if len(peaksAndValleysSorted) == 1:    # Just one segment - segment equeals the full array of prices
         segment['start'] = 0
@@ -360,6 +378,50 @@ def buildChargeCntrlVectorCamel(data,logger):
             else :
                 segment['start'] =  peaksAndValleysSorted[i-1]['end']
                 segment['end'] = math.ceil((segment['extreme'] + peaksAndValleysSorted[i+1]['extreme']) / 2)
+    
+    #
+    # Alternative low-to-low segments
+    #
+    segments = []
+    nseg = 0
+    for i in range(0,len(peaksAndValleysSorted),2):
+        if i == 0 : 
+            start = 0
+        else :
+            start = peaksAndValleysSorted[i]['extreme']
+        if i + 2 < len(peaksAndValleysSorted) :
+            end = peaksAndValleysSorted[i+2]['extreme']
+        else :
+            end = 24
+        segments.append({'start':start,'end':end})
+        print (f"Segment {nseg} start: {segments[nseg]['start']} end: {segments[nseg]['end']}")
+        nseg=nseg+1
+    
+
+    vectorflat = ['0']*24
+    for i,x in enumerate(segments):
+        print (f"Segment: {i} start: {x['start'] } end: {x['end']}")
+        vectx=buildChargeCntrlVectorFlat(data[x['start']:x['end']],logger)
+        if len(vectx) != 0:
+            for n in range(24):
+                if vectx[n] != '0': vectorflat[n] = vectx[n]
+            print("Flat segment based vector:")
+            print(vectorflat)
+            if (i > 0) :
+                # extend next segment to include tail of this segment.
+                for n in range(x['end'],x['start']-1,-1):
+                    if vectorflat(n) == 'H' and i < len(segments) -1:
+                        segments[i+1]['start'] = segments[i+1]['start'] - i
+                        
+                
+        else:
+            if i < len(segments) - 1 :
+                print (f"Segment {i} not used. Next segment extended")
+                segments[i+1]['start'] = x['start']
+            else :
+                print("Last segment not used")
+        
+    
     #
     # Create an list of tuples holding hourly prices
     #
@@ -383,12 +445,23 @@ def buildChargeCntrlVectorCamel(data,logger):
                 vector[y['hour']] = segment['type']
                 segment['hours'] = n + 1
         segment['value'] = segmentValue
-
-
+        print (f"CamelSegment: {i} Type: {segment['type']} Start: {segment['start']} End: {segment['end']} Extreme: {segment['extreme']} Value: {segment['value']}")
     #
     # Analyze all load and discharge segments. Delete a charge segment unless it is profitable taking network transfer cost and inverter losses into account.
     # Also delete corresponding load segment, unless the cost for this is lower than upcoming load segment.
     #
+
+    vectorflat = ['0']*24
+    for i in range(0,len(peaksAndValleysSorted),2):
+        print (f"Segment: {i} start: {peaksAndValleysSorted[i]['start'] } end: {peaksAndValleysSorted[i+1]['end']}")
+        vectx=buildChargeCntrlVectorFlat(data[ peaksAndValleysSorted[i]['start']:peaksAndValleysSorted[i+1]['end']],logger)
+        if len(vectx) != 0:
+            for n in range(24):
+                if vectx[n] != '0': vectorflat[n] = vectx[n]
+            print("Flat vector:")
+            print(vectorflat)
+
+
     
     for i in range(0,len(peaksAndValleysSorted),2):
         chargesegmentlength = peaksAndValleysSorted[i]['end'] - peaksAndValleysSorted[i]['start']
