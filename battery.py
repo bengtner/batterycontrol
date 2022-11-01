@@ -199,9 +199,11 @@ def buildOptimizedChargeCntrlVector(data,logger):
         xsegment = buildChargeCntrlVector(data[x['start']:x['end']],logger)
         xvalue = netValue(data,xsegment)
         logger.info(f"Value segment {i} {xvalue}")
-        if len(xsegment) != 0:
+        if len(xsegment) != 0 and xvalue > 0:
             for i,y in enumerate(xsegment) : 
                 if y != '0' : vector[i] = y
+        else:
+            logger.info("Segment discarded")
     logger.info('')
     logger.info("Multiple segment vector result:")
     printvect(vector,logger)
@@ -239,31 +241,39 @@ def buildOptimizedChargeCntrlVector(data,logger):
 #
 def buildChargeCntrlVector(data,logger):
 
+    firstSegmentHour=int(data[0]['startsAt'][11:13])
+    print(f"Segment start hour: {firstSegmentHour}")
     result = buildVector(CYCLELENGTH,CYCLELENGTH,data,logger)
     logger.debug("segmentvector first step:")
     printvectdebug(result['vector'],logger)
     if result['high'] == CYCLELENGTH :
         logger.debug(f"High segment OK, starts at: {result['hindex']}")
-    logger.debug("Result high {result['high']} high index {result['hindex']} low {result['low']} low index {result['lindex']}")
+    logger.debug(f"Result high {result['high']} high index {result['hindex']} low {result['low']} low index {result['lindex']}")
     
     # Check if we have low segment before high to be able to charge
     if result['low'] < CYCLELENGTH  and result['hindex'] >= CYCLELENGTH:
-        logger.debug("Low segment not found before high. Shorten segment and repeat analysis")
+        logger.debug(f"Full length low segment not found before high. Shorten segment and repeat analysis. Start segment at  {0}, end at {result['hindex']}")
         # Check if we have room for a low segment before high to be able to charge by removing tail of low price hours
-        result_low = buildVector(CYCLELENGTH,CYCLELENGTH,data[0:result['hindex']+result['high']],logger) # Make a new sort of earlier hours 
+        result_low = buildVector(CYCLELENGTH,0,data[0:result['hindex'] - firstSegmentHour],logger) # Make a new sort of earlier hours to find charging hours before discharge hours     +result['high']
+
         logger.debug("Lower part")
         printvectdebug(result_low['vector'],logger)
         if result_low['low'] < CYCLELENGTH :
             logger.debug("Not possible to fulfill low segment requirement")
-            logger.debug(f"Low segment short {result['low']}, starts at: {result['lindex']}")
+            logger.debug(f"Low segment short {result_low['low']}, starts at: {result_low['lindex']}")
             if result_low['low'] <= result['low'] :
                 if result['low'] == 0:
-                    return []
+                    return []                               # This can't happen or?
                 else :
-                    return result['vector']
+                    return result['vector']                 # Low segment analysis not better than first attempt - return first attempt
             
-        logger.debug(f"Low segment OK, starts at {result_low['lindex']}")
-        return result_low['vector']
+        logger.debug(f"Low segment found, starts at {result_low['lindex']}")   # Continue and merge first attempt with low segment. 
+        for i in range(24) :
+            if result_low['vector'][i] == 'L' : result['vector'][i] = result_low['vector'][i]
+            if i >=result['hindex']+result['high'] :          #Clear all low hours after discharging hours
+                #print (f"Clear tail hour {i}")
+                result['vector'][i] = '0'
+        return result['vector']
     elif result['hindex'] >= CYCLELENGTH :
         logger.debug(f"Low segment OK, starts at: {result['lindex']}")
         return result['vector']
@@ -294,6 +304,7 @@ def buildVector(nrlow,nrhigh,data,logger):
 
     sorted_data = sorted(data, key=lambda d: d['total'])
     logger.debug("Sorted data: ")
+    printdata(sorted_data,logger)
     logger.debug(f"nlow {nrlow} nhigh {nrhigh}")
 
     for x in range(min(nrlow,len(data))):
@@ -408,11 +419,11 @@ def netValue(data,vector) :
     nolow = 0
     nohigh = 0
     for i in range(24) :
-        if tempvector[i] == 'L' and nolow < CYCLELENGTH:
+        if tempvector[i] == 'L' and nolow < CYCLELENGTH:                            # Charging: Sum up a max CYCLELENGTH charging ours
             nolow = nolow + 1
             value = value - (data[i]['total'] + NETTRANSFERCOST) * (1+INVERTERLOSS)
             #print(f"Hour {i}, {tempvector[i]}, noLow {nolow}")
-        if tempvector[i] == 'H' and nolow > 0:
+        if tempvector[i] == 'H' and nolow > 0:                                      # Discharging: Sum up max #charging hours 
             nolow = nolow - 1
             value = value + data[i]['total'] * (1-INVERTERLOSS)
             #print(f"Hour {i}, {tempvector[i]}, noLow {nolow}")
@@ -462,7 +473,25 @@ def printvect(vect,logger):
 
 def testdata(data) :
 
-    testdata = [0.3055, 0.2994, 0.2921, 0.2902, 0.296, 0.3117, 0.382, 1.7493, 2.2345, 2.2333, 2.2337, 2.234, 1.9699, 1.75, 1.7498, 1.6685, 1.75, 2.1652, 2.7454, 2.51, 0.9099, 0.6484, 0.5767, 0.5056]
+    #Use input data as default
+
+    testdata = [0]*len(data)        
+    for i,x in enumerate(data) :
+         testdata[i] = x['total']
+
+
+    #testdata = [0.3055, 0.2994, 0.2921, 0.2902, 0.296, 0.3117, 0.382, 1.7493, 2.2345, 2.2333, 2.2337, 2.234, 1.9699, 1.75, 1.7498, 1.6685, 1.75, 2.1652, 2.7454, 2.51, 0.9099, 0.6484, 0.5767, 0.5056]
+    
+    #
+    #
+    # Camel HLLHHL 
+    testdata = [0.455, 0.394, 0.2921, 0.2902, 0.296, 0.3117, 0.382, 1.7493, 2.2345, 2.2333, 2.23, 2.22, 1.9699, 1.75, 2.1, 2.05, 2, 1.9, 1.8, 1.5, 0.9, 0.6, 0.5, 0.4]
+
+    #
+    # Camel with low segments spread over day
+    #
+    testdata = [0.455, 0.394, 0.2921, 0.2902, 0.3, 0.3117, 1.8, 2.0, 1.8, 1.0, 0.2, 1.5, 1.6, 1.75, 2.1, 2.05, 2, 1.9, 1.0, 0.8, 0.3, 0.2, 0.2, 0.2]
+
 
     for i,x in enumerate(testdata) :
         data[i]['total'] = x
@@ -480,10 +509,8 @@ def main():
     
     haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN)
    
-    print("LOGLEVEL: "+LOGLEVEL)
     bLogger.info("*** Battery control system is starting up ***")
-    bLogger.info("Logging - Log file: %s, Log level: %s", LOGFILE, LOGLEVEL)
-    bLogger.debug("Hej hopp")
+    bLogger.info(f"Logging - Log file: {LOGFILE}, Log level: {LOGLEVEL}, Test: {TEST}")
 
     batteryChargeCntrl=haEntity(haSrv,"input_select.battery_mode")
     battery_mode=batteryChargeCntrl.getState()
