@@ -220,7 +220,7 @@ def buildOptimizedChargeCntrlVector(data,logger):
         value = msegmentvalue
         returnvector = vector
     if value > 0 :
-        return vector
+        return returnvector
     else :
         return ['0']*24
 
