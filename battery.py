@@ -448,7 +448,7 @@ def printvectdebug(vect,logger):
     logger.debug("0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23")
     line = ''
     for i,x in enumerate(vect):
-        if i < 10:
+        if i < 9:
             sp =' '
         else:
             sp = '  '
@@ -462,7 +462,7 @@ def printvect(vect,logger):
     logger.info("0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23")
     line = ''
     for i,x in enumerate(vect):
-        if i <10:
+        if i <9:
             sp =' '
         else:
             sp = '  '
@@ -526,8 +526,10 @@ def main():
     else :
         planned_vector = []
 
-    bLogger.info(f"Todays vector (at startup): {vector}" )
-    bLogger.info(f"Next days vector (at startup): {planned_vector}" )
+    bLogger.info("Todays vector (at startup):" )
+    printvect(vector,bLogger)
+    bLogger.info("Next days vector (at startup):" )
+    printvect(planned_vector,bLogger)
 
     if PRICECONTROL:
         haMaxPrice=haEntity(haSrv,'input_number.max_pris')
@@ -564,7 +566,8 @@ def main():
                     bLogger.info("Price curve segment. Activate maximize self-consumption mode ")
                     batteryChargeCntrl.setState('Selfconsumption')
                 else :
-                    bLogger.info(f"Activate planned vector: {planned_vector}")
+                    bLogger.info(f"Activate planned vector:")
+                    printvect(planned_vector,bLogger)
                 if PRICECONTROL :
                     todaysAveragePrice=tomorrowsAveragePrice
                     bLogger.info(f"Todays average price is: {todaysAveragePrice}")
@@ -577,7 +580,8 @@ def main():
                 planned_vector = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
                 if len(planned_vector) != 0 : 
                     if planned_vector[NOCHARGEHOUR] == 'L' : planned_vector[NOCHARGEHOUR] = '0'
-                    bLogger.info(f"Next days vector: {planned_vector}" )
+                    bLogger.info(f"Next days vector: " )
+                    printvect(planned_vector,bLogger)
                 else :
                     bLogger.info("Next day will apply maximize self-consumption")
                 if PRICECONTROL :
