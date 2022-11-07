@@ -425,7 +425,7 @@ def netValue(data,vector) :
             #print(f"Hour {i}, {tempvector[i]}, noLow {nolow}")
         if tempvector[i] == 'H' and nolow > 0:                                      # Discharging: Sum up max #charging hours 
             nolow = nolow - 1
-            value = value + data[i]['total'] * (1-INVERTERLOSS)
+            value = value + data[i]['total'] * (1-INVERTERLOSS)*0.8                 # VAT included in cost (charging hours), but not when you sell.
             #print(f"Hour {i}, {tempvector[i]}, noLow {nolow}")
     
     return value*CHARGINGPOWER
@@ -498,6 +498,14 @@ def testdata(data) :
     return data
 
 
+def empty(vector):
+    if 'L' in vector or 'H' in vector : 
+        return False
+    else:
+        return True
+        
+
+
 
         
 
@@ -528,6 +536,10 @@ def main():
 
     bLogger.info("Todays vector (at startup):" )
     printvect(vector,bLogger)
+    if empty(vector) : 
+        bLogger.info("Apply maximize self-consumption")
+        #batteryChargeCntrl.setState('Selfconsumption')
+
     bLogger.info("Next days vector (at startup):" )
     printvect(planned_vector,bLogger)
 
@@ -562,7 +574,7 @@ def main():
 
             if hour == 0:
                 vector=planned_vector
-                if len(vector) == 0 :
+                if empty(vector) :
                     bLogger.info("Price curve segment. Activate maximize self-consumption mode ")
                     batteryChargeCntrl.setState('Selfconsumption')
                 else :
