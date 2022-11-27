@@ -164,10 +164,15 @@ def logger(name,level):
 # Function to fetch elecitricy prices from Tibber broker for today and tomorrow (if available)
 #
 
-def getPrices():
+def getPrices(logger):
     authorization = {"Authorization": "Bearer" + privatetokens.TIBBER_TOKEN , "Content-Type":"application/json"}
     gql = '{ "query": "{viewer {homes {currentSubscription {priceInfo {current {total energy tax startsAt} today {total energy tax startsAt} tomorrow { total energy tax startsAt }} }}}}"} '
-    response = post("https://api.tibber.com/v1-beta/gql", data=gql, headers=authorization)
+    try:
+        response = post("https://api.tibber.com/v1-beta/gql", data=gql, headers=authorization)
+    except Exception as err:
+        logger.error("Error connecting to Tibber")
+        logger.error(err)
+        quit()
     return response
 #
 #
@@ -524,7 +529,7 @@ def main():
     battery_mode=batteryChargeCntrl.getState()
     bLogger.info("Current battery mode: "+battery_mode)
 
-    pdata=json.loads(getPrices().text)             # get prices
+    pdata=json.loads(getPrices(bLogger).text)             # get prices
     vector = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'],bLogger)
     if len(vector) != 0 and vector[NOCHARGEHOUR] == 'L' : vector[NOCHARGEHOUR] = '0'
     if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 and not TEST:
@@ -587,7 +592,7 @@ def main():
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'] = []
             
             if hour == 15:
-                pdata=json.loads(getPrices().text)             # get new prices
+                pdata=json.loads(getPrices(bLogger).text)             # get new prices
                 bLogger.info("Fetched next days prices, analyzing....")
                 planned_vector = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
                 if len(planned_vector) != 0 : 
