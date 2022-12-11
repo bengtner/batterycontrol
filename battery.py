@@ -91,8 +91,8 @@ class haEntity():
         if attributes:
             payload["attributes"] = attributes
         response = post(self.url + "/api/states/" + self.id, headers=self.headers, json=payload )
-
         return response.ok
+
 
     def turnOn(self):
         payload = {
@@ -544,12 +544,11 @@ def main():
 
     bLogger.info("Todays vector (at startup):" )
     printvect(vector,bLogger)
-    if empty(vector) : 
-        bLogger.info("Apply maximize self-consumption")
-        #batteryChargeCntrl.setState('Selfconsumption')
-
-    bLogger.info("Next days vector (at startup):" )
-    printvect(vector_tomorrow,bLogger)
+    if vector_tomorrow:
+        bLogger.info("Next days vector (at startup):")
+        printvect(vector_tomorrow,bLogger)
+    else:
+        bLogger.info("Tomorrows vector empty... (at strartup)")
 
     if PRICECONTROL:
         haMaxPrice=haEntity(haSrv,'input_number.max_pris')
@@ -567,17 +566,18 @@ def main():
             tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
         else :
             tomorrowsAveragePrice = 0
-    hour = datetime.datetime.now().hour
+    hour = -1
 
     if TEST : return
    
     while True : 
 
-        if datetime.datetime.now().hour > hour  or (datetime.datetime.now().hour == 0 and hour==23):         # New hour
-            if hour == 23:
-                hour = 0
-            else:
-                hour = hour + 1
+    # Continuous execution Loop
+    while True:
+        # Run once each new hour
+        if datetime.datetime.now().hour > hour or (datetime.datetime.now().hour == 0 and hour == 23):
+            # New hour
+            hour = datetime.datetime.now().hour
             time.sleep(60)                      # Wait one minute to make sure we are well beyond hour boundery
 
             if hour == 0:
