@@ -83,10 +83,13 @@ class haEntity():
         response = get(self.url + "/api/states/" + self.id, headers=self.headers)
         return json.loads(response.text)['state']
 
-    def setState(self,state):
+    def setState(self, state, attributes={}):
         payload = {
             "state" : state
         }
+        # Add attributes to entity if provided
+        if attributes:
+            payload["attributes"] = attributes
         response = post(self.url + "/api/states/" + self.id, headers=self.headers, json=payload )
 
         return response.ok
@@ -534,10 +537,10 @@ def main():
     if len(vector) != 0 and vector[NOCHARGEHOUR] == 'L' : vector[NOCHARGEHOUR] = '0'
     if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 and not TEST:
         a=1
-        planned_vector =  buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
-        if len(planned_vector) > 0 and planned_vector[NOCHARGEHOUR] == 'L': planned_vector[NOCHARGEHOUR] = '0'
+        vector_tomorrow =  buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
+        if len(vector_tomorrow) > 0 and vector_tomorrow[NOCHARGEHOUR] == 'L': vector_tomorrow[NOCHARGEHOUR] = '0'
     else :
-        planned_vector = []
+        vector_tomorrow = []
 
     bLogger.info("Todays vector (at startup):" )
     printvect(vector,bLogger)
@@ -546,7 +549,7 @@ def main():
         #batteryChargeCntrl.setState('Selfconsumption')
 
     bLogger.info("Next days vector (at startup):" )
-    printvect(planned_vector,bLogger)
+    printvect(vector_tomorrow,bLogger)
 
     if PRICECONTROL:
         haMaxPrice=haEntity(haSrv,'input_number.max_pris')
@@ -578,27 +581,28 @@ def main():
             time.sleep(60)                      # Wait one minute to make sure we are well beyond hour boundery
 
             if hour == 0:
-                vector=planned_vector
+                vector=vector_tomorrow.copy()
+                vector_tomorrow = []
                 if empty(vector) :
                     bLogger.info("Price curve segment. Activate maximize self-consumption mode ")
-                    batteryChargeCntrl.setState('Selfconsumption')
+                    batteryChargeCntrl.setState('Selfconsumption', dict(Today=vector, Tomorrow=vector_tomorrow))
                 else :
-                    bLogger.info(f"Activate planned vector:")
-                    printvect(planned_vector,bLogger)
+                    bLogger.info(f"New day!  Todays plan:")
+                    printvect(vector,bLogger)
                 if PRICECONTROL :
                     todaysAveragePrice=tomorrowsAveragePrice
                     bLogger.info(f"Todays average price is: {todaysAveragePrice}")
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'] = pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'] = []
             
-            if hour == 15:
+            if hour >= 15 and not vector_tomorrow:
                 pdata=json.loads(getPrices(bLogger).text)             # get new prices
                 bLogger.info("Fetched next days prices, analyzing....")
-                planned_vector = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
-                if len(planned_vector) != 0 : 
-                    if planned_vector[NOCHARGEHOUR] == 'L' : planned_vector[NOCHARGEHOUR] = '0'
+                vector_tomorrow = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
+                if len(vector_tomorrow) != 0 :
+                    if vector_tomorrow[NOCHARGEHOUR] == 'L' : vector_tomorrow[NOCHARGEHOUR] = '0'
                     bLogger.info(f"Next days vector: " )
-                    printvect(planned_vector,bLogger)
+                    printvect(vector_tomorrow,bLogger)
                 else :
                     bLogger.info("Next day will apply maximize self-consumption")
                 if PRICECONTROL :
@@ -606,13 +610,13 @@ def main():
                     bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
             if len(vector) != 0:
                 if vector[hour] == '0' :
-                    batteryChargeCntrl.setState('Idle')
+                    batteryChargeCntrl.setState('Idle', dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Idle")
                 elif vector[hour] == 'L':
-                    batteryChargeCntrl.setState('Charge')
+                    batteryChargeCntrl.setState('Charge', dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Charge")
                 else:
-                    batteryChargeCntrl.setState('Discharge')
+                    batteryChargeCntrl.setState('Discharge', dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Discharge")
             else :
                 bLogger.info("No high price segments. Apply maximize self-consumptio")
