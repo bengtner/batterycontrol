@@ -543,7 +543,7 @@ def main():
     printvect(vector,bLogger)
     if empty(vector) : 
         bLogger.info("Apply maximize self-consumption")
-        #batteryChargeCntrl.setState('Selfconsumption')
+        batteryChargeCntrl.setState('Selfconsumption')
 
     bLogger.info("Next days vector (at startup):" )
     printvect(planned_vector,bLogger)
@@ -580,7 +580,7 @@ def main():
             if hour == 0:
                 vector=planned_vector
                 if empty(vector) :
-                    bLogger.info("Price curve segment. Activate maximize self-consumption mode ")
+                    bLogger.info("No charge/discharge segments. Activate maximize self-consumption mode ")
                     batteryChargeCntrl.setState('Selfconsumption')
                 else :
                     bLogger.info(f"Activate planned vector:")
@@ -604,7 +604,7 @@ def main():
                 if PRICECONTROL :
                     tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
                     bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
-            if len(vector) != 0:
+            if  not empty(vector) :
                 if vector[hour] == '0' :
                     batteryChargeCntrl.setState('Idle')
                     bLogger.info("Battery mode set to Idle")
