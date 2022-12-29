@@ -52,7 +52,7 @@ CHARGINGPOWER = 2.5         # Charging and discharging power (kW)
 
 class homeAssistant:
 
-    def __init__(self,url,token):
+    def __init__(self,url,token,logger):
     
         #
         #   create object holding server
@@ -63,6 +63,7 @@ class homeAssistant:
             "content-type": "application/json",
         }
         self.url = url
+        self.logger = logger
 
 ###################################################################
 #
@@ -77,6 +78,7 @@ class haEntity():
         self.url=ha.url
         self.headers = ha.headers
         self.id = id
+        self.logger = ha.logger
 
         
     def getState(self):
@@ -84,6 +86,7 @@ class haEntity():
         return json.loads(response.text)['state']
 
     def setState(self, state, attributes={}):
+        logger = self.logger
         payload = {
             "state" : state
         }
@@ -91,6 +94,9 @@ class haEntity():
         if attributes:
             payload["attributes"] = attributes
         response = post(self.url + "/api/states/" + self.id, headers=self.headers, json=payload )
+        if not response.ok:
+            logger.error('Failed to send request to homeassistant: ' + str(response.status_code) +
+                ' - ' + response.reason + ', url: ' + response.url + ', req: ' + str(payload) + ', response_req: ' + str(response.request.body))
         return response.ok
 
 
@@ -123,7 +129,7 @@ def get_cmd_line_parameters():
     global LOGFILE,LOGLEVEL,TEST,PRICECONTROL
 
     parser = argparse.ArgumentParser( description='Battery charging control daemon' )
-    parser.add_argument("-v", "--loglevel", help="Log level. DEBUG, WARNING, INFO, ERROR or CRITICAL. Default ERROR.",default='ERROR')
+    parser.add_argument("-v", "--loglevel", help="Log level. DEBUG, WARNING, INFO, ERROR or CRITICAL. Default ERROR.",default=LOGLEVEL)
     parser.add_argument("-l", "--logfile", help="Log file. Default " + LOGFILE, default=LOGFILE)
     parser.add_argument("-t", "--test", help="Test mode. Will test HA and TIBBER interface. No loop and nothing set in HA. Logging set to INFO and name set to batterytest.log", action="store_true")
     parser.add_argument("-p", "--pricecontrol", help="Price control. Will control setting of entity input_select.heating_level.", action="store_true")
@@ -523,7 +529,7 @@ def main():
     options=get_cmd_line_parameters()           # get command line  
     bLogger=logger(LOGFILE, LOGLEVEL)
     
-    haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN)
+    haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN,bLogger)
    
     bLogger.info("*** Battery control system is starting up ***")
     bLogger.info(f"Logging - Log file: {LOGFILE}, Log level: {LOGLEVEL}, Test: {TEST}")
