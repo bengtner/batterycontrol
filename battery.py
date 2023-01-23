@@ -28,6 +28,8 @@ import math
 #TIBBER_TOKEN = "notsolongstring......"
 import privatetokens
 
+TIBBER_URL ="https://api.tibber.com/v1-beta/gql"
+
 # Default values, can be changed by command line options
 
 LOGFILE="./battery.log"
@@ -168,7 +170,7 @@ def getPrices(logger):
     authorization = {"Authorization": "Bearer" + privatetokens.TIBBER_TOKEN , "Content-Type":"application/json"}
     gql = '{ "query": "{viewer {homes {currentSubscription {priceInfo {current {total energy tax startsAt} today {total energy tax startsAt} tomorrow { total energy tax startsAt }} }}}}"} '
     try:
-        response = post("https://api.tibber.com/v1-beta/gql", data=gql, headers=authorization)
+        response = post(TIBBER_URL, data=gql, headers=authorization)
     except Exception as err:
         logger.error("Error connecting to Tibber")
         logger.error(err)
@@ -605,33 +607,33 @@ def main():
                     tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
                     bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
             if  not empty(vector) :
-                if vector[hour] == '0' :
+                battery_mode = batteryChargeCntrl.getState()
+                bLogger.info(f"Current battery_mode {battery_mode}")
+                if vector[hour] == '0' and battery_mode != 'Idle' :
                     batteryChargeCntrl.setState('Idle')
                     bLogger.info("Battery mode set to Idle")
-                elif vector[hour] == 'L':
+                elif vector[hour] == 'L' and battery_mode != 'Charge' :
                     batteryChargeCntrl.setState('Charge')
                     bLogger.info("Battery mode set to Charge")
-                else:
+                elif vector[hour] == 'H' and battery_mode != 'Discharge' :
                     batteryChargeCntrl.setState('Discharge')
                     bLogger.info("Battery mode set to Discharge")
-            else :
-                bLogger.info("No high price segments. Apply maximize self-consumptio")
             if PRICECONTROL :
                 maxprice = haMaxPrice.getState()
-                level = haLevel.getState()
-
                 currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
-                if currentprice > float(maxprice) :
+                heatingLevel = haHeatingLevel.getState();
+                bLogger.info(f"Current heating level {heatinglevel}");
+                if currentprice > float(maxprice) and heatingLevel != 'Off' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Off")
                     haHeatingLevel.setState('Off')
-                elif currentprice > todaysAveragePrice *(1+float(level)) :
+                elif currentprice > todaysAveragePrice *(1+float(level)) and heatingLevel != 'Eco' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Eco")
                     haHeatingLevel.setState('Eco')
-                else :
+                elif heatingLevel != 'Normal' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Normal")
                     haHeatingLevel.setState('Normal')
         else :
             time.sleep(60)  
-        
+         
 main()
     
