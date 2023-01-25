@@ -622,6 +622,7 @@ def main():
                 maxprice = haMaxPrice.getState()
                 currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
                 heatingLevel = haHeatingLevel.getState();
+                level = haLevel.getState()
                 bLogger.info(f"Current heating level {heatinglevel}");
                 if currentprice > float(maxprice) and heatingLevel != 'Off' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Off")
@@ -629,7 +630,7 @@ def main():
                 elif currentprice > todaysAveragePrice *(1+float(level)) and heatingLevel != 'Eco' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Eco")
                     haHeatingLevel.setState('Eco')
-                elif heatingLevel != 'Normal' :
+                elif currentprice <= todaysAveragePrice *(1+float(level)) and heatingLevel != 'Normal' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Normal")
                     haHeatingLevel.setState('Normal')
         else :
