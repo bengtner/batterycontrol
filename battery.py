@@ -54,7 +54,7 @@ CHARGINGPOWER = 2.5         # Charging and discharging power (kW)
 
 class homeAssistant:
 
-    def __init__(self,url,token):
+    def __init__(self,url,token,logger):
     
         #
         #   create object holding server
@@ -65,6 +65,7 @@ class homeAssistant:
             "content-type": "application/json",
         }
         self.url = url
+        self.logger = logger
 
 ###################################################################
 #
@@ -79,17 +80,26 @@ class haEntity():
         self.url=ha.url
         self.headers = ha.headers
         self.id = id
+        self.logger = ha.logger
 
         
     def getState(self):
         response = get(self.url + "/api/states/" + self.id, headers=self.headers)
         return json.loads(response.text)['state']
 
-    def setState(self,state):
+    def setState(self,state,attributes={}):
+        logger = self.logger
         payload = {
             "state" : state
         }
+        # Add attributes to entity if provided
+        if attributes:
+            payload["attributes"] = attributes
+
         response = post(self.url + "/api/states/" + self.id, headers=self.headers, json=payload )
+        if not response.ok:
+            logger.error('Failed to send request to homeassistant: ' + str(response.status_code) +
+                ' - ' + response.reason + ', url: ' + response.url + ', req: ' + str(payload) + ', response_req: ' + str(response.request.body))
 
         return response.ok
 
@@ -122,7 +132,7 @@ def get_cmd_line_parameters():
     global LOGFILE,LOGLEVEL,TEST,PRICECONTROL
 
     parser = argparse.ArgumentParser( description='Battery charging control daemon' )
-    parser.add_argument("-v", "--loglevel", help="Log level. DEBUG, WARNING, INFO, ERROR or CRITICAL. Default ERROR.",default='ERROR')
+    parser.add_argument("-v", "--loglevel", help="Log level. DEBUG, WARNING, INFO, ERROR or CRITICAL. Default ERROR.",default=LOGLEVEL)
     parser.add_argument("-l", "--logfile", help="Log file. Default " + LOGFILE, default=LOGFILE)
     parser.add_argument("-t", "--test", help="Test mode. Will test HA and TIBBER interface. No loop and nothing set in HA. Logging set to INFO and name set to batterytest.log", action="store_true")
     parser.add_argument("-p", "--pricecontrol", help="Price control. Will control setting of entity input_select.heating_level.", action="store_true")
@@ -522,7 +532,7 @@ def main():
     options=get_cmd_line_parameters()           # get command line  
     bLogger=logger(LOGFILE, LOGLEVEL)
     
-    haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN)
+    haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN,bLogger)
    
     bLogger.info("*** Battery control system is starting up ***")
     bLogger.info(f"Logging - Log file: {LOGFILE}, Log level: {LOGLEVEL}, Test: {TEST}")
@@ -536,19 +546,22 @@ def main():
     if len(vector) != 0 and vector[NOCHARGEHOUR] == 'L' : vector[NOCHARGEHOUR] = '0'
     if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 and not TEST:
         a=1
-        planned_vector =  buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
-        if len(planned_vector) > 0 and planned_vector[NOCHARGEHOUR] == 'L': planned_vector[NOCHARGEHOUR] = '0'
+        vector_tomorrow =  buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
+        if len(vector_tomorrow) > 0 and vector_tomorrow[NOCHARGEHOUR] == 'L': vector_tomorrow[NOCHARGEHOUR] = '0'
     else :
-        planned_vector = []
+        vector_tomorrow = []
 
     bLogger.info("Todays vector (at startup):" )
     printvect(vector,bLogger)
-    if empty(vector) : 
-        bLogger.info("Apply maximize self-consumption")
-        batteryChargeCntrl.setState('Selfconsumption')
+    #if empty(vector) : 
+    #    bLogger.info("Apply maximize self-consumption")
+    #    batteryChargeCntrl.setState('Selfconsumption')
+    if vector_tomorrow :
+        bLogger.info("Next days vector (at startup):")
+        printvect(vector_tomorrow,bLogger)
+    else:
+        bLogger.info("Tomorrows vector empty... (at startup)")
 
-    bLogger.info("Next days vector (at startup):" )
-    printvect(planned_vector,bLogger)
 
     if PRICECONTROL:
         haMaxPrice=haEntity(haSrv,'input_number.max_pris')
@@ -566,41 +579,42 @@ def main():
             tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
         else :
             tomorrowsAveragePrice = 0
-    hour = datetime.datetime.now().hour
+    hour = -1
 
     if TEST : return
    
+    # Continous execution loop
+
     while True : 
 
-        if datetime.datetime.now().hour > hour  or (datetime.datetime.now().hour == 0 and hour==23):         # New hour
-            if hour == 23:
-                hour = 0
-            else:
-                hour = hour + 1
+        # Run once each new hour
+        if datetime.datetime.now().hour > hour or (datetime.datetime.now().hour == 0 and hour == 23):
+            # New hour
+            hour = datetime.datetime.now().hour
             time.sleep(60)                      # Wait one minute to make sure we are well beyond hour boundery
 
             if hour == 0:
-                vector=planned_vector
+                vector=vector_tomorrow
                 if empty(vector) :
                     bLogger.info("No charge/discharge segments. Activate maximize self-consumption mode ")
                     batteryChargeCntrl.setState('Selfconsumption')
                 else :
-                    bLogger.info(f"Activate planned vector:")
-                    printvect(planned_vector,bLogger)
+                    bLogger.info(f"New day! Todays plan:")
+                    printvect(vector_tomorrow,bLogger)
                 if PRICECONTROL :
                     todaysAveragePrice=tomorrowsAveragePrice
                     bLogger.info(f"Todays average price is: {todaysAveragePrice}")
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'] = pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'] = []
             
-            if hour == 15:
+            if hour >= 15:
                 pdata=json.loads(getPrices(bLogger).text)             # get new prices
                 bLogger.info("Fetched next days prices, analyzing....")
-                planned_vector = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
-                if len(planned_vector) != 0 : 
-                    if planned_vector[NOCHARGEHOUR] == 'L' : planned_vector[NOCHARGEHOUR] = '0'
+                vector_tomorrow = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
+                if len(vector_tomorrow) != 0 : 
+                    if vector_tomorrow[NOCHARGEHOUR] == 'L' : vector_tomorrow[NOCHARGEHOUR] = '0'
                     bLogger.info(f"Next days vector: " )
-                    printvect(planned_vector,bLogger)
+                    printvect(vector_tomorrow,bLogger)
                 else :
                     bLogger.info("Next day will apply maximize self-consumption")
                 if PRICECONTROL :
@@ -610,13 +624,13 @@ def main():
                 battery_mode = batteryChargeCntrl.getState()
                 bLogger.info(f"Current battery_mode {battery_mode}")
                 if vector[hour] == '0' and battery_mode != 'Idle' :
-                    batteryChargeCntrl.setState('Idle')
+                    batteryChargeCntrl.setState('Idle',dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Idle")
                 elif vector[hour] == 'L' and battery_mode != 'Charge' :
-                    batteryChargeCntrl.setState('Charge')
+                    batteryChargeCntrl.setState('Charge',dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Charge")
                 elif vector[hour] == 'H' and battery_mode != 'Discharge' :
-                    batteryChargeCntrl.setState('Discharge')
+                    batteryChargeCntrl.setState('Discharge',dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Discharge")
             if PRICECONTROL :
                 maxprice = haMaxPrice.getState()
