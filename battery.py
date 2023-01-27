@@ -558,6 +558,8 @@ def main():
         printvect(vector_tomorrow,bLogger)
     else:
         bLogger.info("Tomorrows vector empty... (at startup)")
+    battery_mode = batteryChargeCntrl.getState()
+    bLogger.info(f"Current battery mode (at startup): {battery_mode}")
 
 
     if PRICECONTROL:
