@@ -536,6 +536,9 @@ def main():
     bLogger.info("*** Battery control system is starting up ***")
     bLogger.info(f"Logging - Log file: {LOGFILE}, Log level: {LOGLEVEL}, Test: {TEST}, Pricecontrol: {PRICECONTROL}")
 
+
+    batteryChargeCntrl=haEntity(haSrv,"input_select.battery_mode")
+
     pdata=json.loads(getPrices(bLogger).text)             # get prices
     vector = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'],bLogger)
     if len(vector) != 0 and vector[NOCHARGEHOUR] == 'L' : vector[NOCHARGEHOUR] = '0'
