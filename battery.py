@@ -259,7 +259,6 @@ def buildOptimizedChargeCntrlVector(data,logger):
 def buildChargeCntrlVector(data,logger):
 
     firstSegmentHour=int(data[0]['startsAt'][11:13])
-    print(f"Segment start hour: {firstSegmentHour}")
     result = buildVector(CYCLELENGTH,CYCLELENGTH,data,logger)
     logger.debug("segmentvector first step:")
     printvectdebug(result['vector'],logger)
@@ -535,17 +534,12 @@ def main():
     haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN,bLogger)
    
     bLogger.info("*** Battery control system is starting up ***")
-    bLogger.info(f"Logging - Log file: {LOGFILE}, Log level: {LOGLEVEL}, Test: {TEST}")
-
-    batteryChargeCntrl=haEntity(haSrv,"input_select.battery_mode")
-    battery_mode=batteryChargeCntrl.getState()
-    bLogger.info("Current battery mode: "+battery_mode)
+    bLogger.info(f"Logging - Log file: {LOGFILE}, Log level: {LOGLEVEL}, Test: {TEST}, Pricecontrol: {PRICECONTROL}")
 
     pdata=json.loads(getPrices(bLogger).text)             # get prices
     vector = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'],bLogger)
     if len(vector) != 0 and vector[NOCHARGEHOUR] == 'L' : vector[NOCHARGEHOUR] = '0'
     if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 and not TEST:
-        a=1
         vector_tomorrow =  buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
         if len(vector_tomorrow) > 0 and vector_tomorrow[NOCHARGEHOUR] == 'L': vector_tomorrow[NOCHARGEHOUR] = '0'
     else :
@@ -583,8 +577,9 @@ def main():
 
     if TEST : return
    
-    # Continous execution loop
 
+    # Continous execution loop
+    bLogger.info("Start of control loop")
     while True : 
 
         # Run once each new hour
@@ -622,7 +617,6 @@ def main():
                     bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
             if  not empty(vector) :
                 battery_mode = batteryChargeCntrl.getState()
-                bLogger.info(f"Current battery_mode {battery_mode}")
                 if vector[hour] == '0' and battery_mode != 'Idle' :
                     batteryChargeCntrl.setState('Idle',dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Idle")
@@ -635,16 +629,15 @@ def main():
             if PRICECONTROL :
                 maxprice = haMaxPrice.getState()
                 currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
-                heatingLevel = haHeatingLevel.getState();
+                heatinglevel = haHeatingLevel.getState();
                 level = haLevel.getState()
-                bLogger.info(f"Current heating level {heatinglevel}");
-                if currentprice > float(maxprice) and heatingLevel != 'Off' :
+                if currentprice > float(maxprice) and heatinglevel != 'Off' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Off")
                     haHeatingLevel.setState('Off')
-                elif currentprice > todaysAveragePrice *(1+float(level)) and heatingLevel != 'Eco' :
+                elif currentprice > todaysAveragePrice *(1+float(level)) and heatinglevel != 'Eco' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Eco")
                     haHeatingLevel.setState('Eco')
-                elif currentprice <= todaysAveragePrice *(1+float(level)) and heatingLevel != 'Normal' :
+                elif currentprice <= todaysAveragePrice *(1+float(level)) and heatinglevel != 'Normal' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Normal")
                     haHeatingLevel.setState('Normal')
         else :
