@@ -256,8 +256,8 @@ def findSegment(item,length,vector):
             nitem = nitem +1
             if nitem >= length :
                 return i
-    if vector[0] == item : 
-        pos = 0 
+    if vector[i] == item : 
+        pos = i
     else : 
         pos = -1
     return pos
@@ -267,12 +267,10 @@ def buildVector(nrlow,nrhigh,data):
 
 
     vector = ['0']*24
-    print (f"Length of data to be analyzed {len(data)}")
-    printdata(data)
+    
 
     sorted_data = sorted(data, key=lambda d: d['total'])
-    print("Sorted data: ")
-    printdata(sorted_data) 
+    print(f"Sorted data: {sorted_data}") 
     print (f"nlow {nrlow} nhigh {nrhigh}")
 
     for x in range(min(nrlow,len(data))):
@@ -409,20 +407,15 @@ def buildChargeCntrlVectorCamel(data,logger):
                 if vectx[n] != '0': vectorflat[n] = vectx[n]
             print("Flat segment based vector:")
             print(vectorflat)
-            #if (i <  len(segments) -1) :# there is at least one more segment that can be prolonged
-            #    # extend next segment to include tail of this segment.
-            #    print(f"Extend next segment {i+1} with tail of current segment by decreasing starting index")
-            #    print(f"Scan from {x['end']-1}")
-            #    for n in range(x['end']-1,x['start']-1,-1):
-            #        print(f"Index {n}")
-            #        if vectorflat[n] == 'H' :
-            #            print(f"End of high found at {n}, set start of next segment to {n+1}")
-            #            segments[i+1]['start'] =  n + 1
-            #            break
+            if (i > 0) :
+                # extend next segment to include tail of this segment.
+                for n in range(x['end'],x['start']-1,-1):
+                    if vectorflat(n) == 'H' and i < len(segments) -1:
+                        segments[i+1]['start'] = segments[i+1]['start'] - i
                         
                 
         else:
-            if i < len(segments) - 1 :  
+            if i < len(segments) - 1 :
                 print (f"Segment {i} not used. Next segment extended")
                 segments[i+1]['start'] = x['start']
             else :
@@ -437,8 +430,7 @@ def buildChargeCntrlVectorCamel(data,logger):
         hourprice.append({'hour':i,'price':x})
 
     #
-    # Sort price
-    # s in each segment and make a sum of the n:th (CYCLELENGTH) highest/lowest values for peak/valley segment. Populate vector
+    # Sort prices in each segment and make a sum of the n:th (CYCLELENGTH) highest/lowest values for peak/valley segment. Populate vector
     # with H or L for the peak/low values 
     #
     for i,segment in enumerate(peaksAndValleysSorted):
@@ -504,9 +496,6 @@ def averagePrice(data) :
         sum = sum + x['total']
     return sum/24
 
-def printdata(data):
-    for x in data:
-        print(f"{x['startsAt'][11:13]}:{x['total']}")
 
 
 def main():
@@ -514,14 +503,14 @@ def main():
     options=get_cmd_line_parameters()           # get command line  
     bLogger=logger(LOGFILE, LOGLEVEL)
     
-   # haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN)
+    haSrv=homeAssistant(privatetokens.HA_URL,privatetokens.HA_TOKEN)
    
     bLogger.info("*** Battery control system is starting up ***")
     bLogger.info("Logging - Log file: %s, Log level: %s", LOGFILE, LOGLEVEL)
 
-    #batteryChargeCntrl=haEntity(haSrv,"input_select.battery_mode")
-    #battery_mode=batteryChargeCntrl.getState()
-    #bLogger.info("Current battery mode: "+battery_mode)
+    batteryChargeCntrl=haEntity(haSrv,"input_select.battery_mode")
+    battery_mode=batteryChargeCntrl.getState()
+    bLogger.info("Current battery mode: "+battery_mode)
 
     pdata=json.loads(getPrices().text)             # get prices
     vector = buildChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'],bLogger)
