@@ -594,20 +594,23 @@ def main():
             time.sleep(60)                      # Wait one minute to make sure we are well beyond hour boundery
 
             if hour == 0:
-                vector=vector_tomorrow
+                vector=vector_tomorrow.copy()
+                vector_tomorrow = []
                 if empty(vector) :
                     bLogger.info("No charge/discharge segments. Activate maximize self-consumption mode ")
-                    batteryChargeCntrl.setState('Selfconsumption')
+                    batteryChargeCntrl.setState('Selfconsumption',dict(Today=vector, Tomorrow=vector_tomorrow))
                 else :
                     bLogger.info(f"New day! Todays plan:")
-                    printvect(vector_tomorrow,bLogger)
+                    printvect(vector,bLogger)
+                    battery_mode = batteryChargeCntrl.getState()
+                    batteryChargeCntrl.setState(battery_mode,dict(Today=vector, Tomorrow=vector_tomorrow))
                 if PRICECONTROL :
                     todaysAveragePrice=tomorrowsAveragePrice
                     bLogger.info(f"Todays average price is: {todaysAveragePrice}")
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'] = pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']
                 pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'] = []
             
-            if hour == 15:
+            if hour >= 15 and not vector_tomorrow:
                 pdata=json.loads(getPrices(bLogger).text)             # get new prices
                 bLogger.info("Fetched next days prices, analyzing....")
                 vector_tomorrow = buildOptimizedChargeCntrlVector(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'],bLogger)
@@ -617,10 +620,12 @@ def main():
                     printvect(vector_tomorrow,bLogger)
                 else :
                     bLogger.info("Next day will apply maximize self-consumption")
+                battery_mode = batteryChargeCntrl.getState()
+                batteryChargeCntrl.setState(battery_mode,dict(Today=vector, Tomorrow=vector_tomorrow))
                 if PRICECONTROL :
                     tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
                     bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
-            if  not empty(vector) :
+            if  len(vector) != 0 :
                 battery_mode = batteryChargeCntrl.getState()
                 if vector[hour] == '0' and battery_mode != 'Idle' :
                     batteryChargeCntrl.setState('Idle',dict(Today=vector, Tomorrow=vector_tomorrow))
