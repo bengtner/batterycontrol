@@ -573,7 +573,11 @@ def main():
         bLogger.info(f"Current Level (at startup): {level}")
         bLogger.info(f"Current Heating Level (at startup): {heatinglevel}")
         todaysAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'])
+        tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
+        bLogger.info(f"Today {pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today']}")
+        bLogger.info(f"Tomorrow {pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']}")
         bLogger.info(f"Todays average price (at startup): {todaysAveragePrice}")
+        bLogger.info(f"Tomorrows average price (at startup): {tomorrowsAveragePrice}")
         if len(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) > 0 :
             tomorrowsAveragePrice = averagePrice(pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'])
         else :
@@ -627,7 +631,7 @@ def main():
                     bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
             if  len(vector) != 0 :
                 battery_mode = batteryChargeCntrl.getState()
-                if vector[hour] == '0' and battery_mode != 'Idle' :
+                if vector[hour] == '0' and (battery_mode != 'Idle' and battery_mode != 'Selfconsumption') :
                     batteryChargeCntrl.setState('Idle',dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Idle")
                 elif vector[hour] == 'L' and battery_mode != 'Charge' :
@@ -640,6 +644,8 @@ def main():
                 maxprice = haMaxPrice.getState()
                 currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
                 heatinglevel = haHeatingLevel.getState();
+                bLogger.info(f"Currentprice {currentprice}")
+                bLogger.info(f"heatingLevel {heatinglevel}")
                 level = haLevel.getState()
                 if currentprice > float(maxprice) and heatinglevel != 'Off' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Off")
