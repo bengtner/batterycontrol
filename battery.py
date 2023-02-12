@@ -550,9 +550,9 @@ def main():
 
     bLogger.info("Todays vector (at startup):" )
     printvect(vector,bLogger)
-    #if empty(vector) : 
-    #    bLogger.info("Apply maximize self-consumption")
-    #    batteryChargeCntrl.setState('Selfconsumption')
+    if empty(vector) : 
+        bLogger.info("Apply maximize self-consumption")
+        batteryChargeCntrl.setState('Selfconsumption')
     if vector_tomorrow :
         bLogger.info("Next days vector (at startup):")
         printvect(vector_tomorrow,bLogger)
@@ -631,7 +631,7 @@ def main():
                     bLogger.info(f"Tomorrows average price: {tomorrowsAveragePrice}")
             if  len(vector) != 0 :
                 battery_mode = batteryChargeCntrl.getState()
-                if vector[hour] == '0' and (battery_mode != 'Idle' and battery_mode != 'Selfconsumption') :
+                if vector[hour] == '0' and battery_mode != 'Idle' and battery_mode != 'Selfconsumption' :
                     batteryChargeCntrl.setState('Idle',dict(Today=vector, Tomorrow=vector_tomorrow))
                     bLogger.info("Battery mode set to Idle")
                 elif vector[hour] == 'L' and battery_mode != 'Charge' :
@@ -644,8 +644,6 @@ def main():
                 maxprice = haMaxPrice.getState()
                 currentprice =  pdata['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][hour]['total']
                 heatinglevel = haHeatingLevel.getState();
-                bLogger.info(f"Currentprice {currentprice}")
-                bLogger.info(f"heatingLevel {heatinglevel}")
                 level = haLevel.getState()
                 if currentprice > float(maxprice) and heatinglevel != 'Off' :
                     bLogger.info(f"Current price is: {currentprice} Heating level set to: Off")
